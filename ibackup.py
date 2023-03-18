@@ -45,13 +45,12 @@ def backup(source, destdir, mode):
     api.drive.root.dir()
     api._drive.params["clientId"] = api.client_id
 
-    _mkdir_p(api.drive.root, "ibackup", destdir)
-
     with open(source, "rb") as f:
-        api.drive["ibackup"][destdir].upload(f)
+        destdir_node = _mkdir_p(api.drive.root, "ibackup", destdir)
+        destdir_node.upload(f)
 
 
-def _mkdir_p(node: DriveNode, *components):
+def _mkdir_p(node: DriveNode, *components) -> DriveNode:
     for component in components:
         if component not in node.dir():
             node.mkdir(component)
@@ -60,6 +59,7 @@ def _mkdir_p(node: DriveNode, *components):
             if component not in node.dir():
                 raise RuntimeError(f"mkdir succeeded but {component} not visible")
         node = node[component]
+    return node
 
 
 if __name__ == "__main__":
