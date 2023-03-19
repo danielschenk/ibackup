@@ -6,6 +6,8 @@ import tempfile
 import pathlib
 import time
 import shutil
+import logging
+
 import click
 from pyicloud import PyiCloudService
 from pyicloud.services.drive import DriveNode
@@ -22,10 +24,19 @@ import dotenv
 @click.option("--purge-backups-older-than",
               help="Delete backups on remote older than the given age in seconds.",
               type=int)
+@click.option("--debug")
 def backup(source, destdir,
            purge_sources_older_than,
-           purge_backups_older_than):
-    api = _login()
+           purge_backups_older_than,
+           debug):
+    logger = logging.getLogger(f"ibackup ({destdir})")
+    stderr = logging.StreamHandler()
+    fmt = "%(asctime)s %(levelname)8s %(name)s: %(message)s"
+    stderr.setFormatter(logging.Formatter(fmt))
+    logger.addHandler(stderr)
+    logger.setLevel(logging.DEBUG if debug else logging.INFO)
+
+    api = _login(logger)
 
     now = time.time()
 
@@ -36,8 +47,10 @@ def backup(source, destdir,
         sourcedir = pathlib.Path(source)
         for path in sourcedir.rglob("*"):
             if path.is_dir():
+                logger.debug(f"skipping purge of {path}")
                 continue
             if now - path.stat().st_mtime > purge_sources_older_than:
+                logger.info(f"removing {path}")
                 path.unlink()
 
     with tempfile.TemporaryDirectory() as tempdir_zip, \
@@ -48,19 +61,20 @@ def backup(source, destdir,
 
         zip_name = str(int(now))
         zip_path = pathlib.Path(tempdir_zip) / zip_name
-        zip_path = shutil.make_archive(zip_path, "zip", source)
+        zip_path = shutil.make_archive(zip_path, "zip", source, logger=logger)
 
         # workaround for https://github.com/picklepete/pyicloud/issues/384
         # (works only after using drive API at least once)
         api.drive.root.dir()
         api._drive.params["clientId"] = api.client_id
 
-        destdir_node = _mkdir_p(api.drive.root, "ibackup", destdir)
+        destdir_node = _mkdir_p(api.drive.root, logger, "ibackup", destdir)
 
         # for some reason, PyIcloud can't handle uploading from parent paths
         curdir = os.curdir
         os.chdir(tempdir_zip)
         with open(os.path.basename(zip_path), "rb") as f:
+            logger.info(f"uploading {zip_path}...")
             destdir_node.upload(f)
         os.chdir(curdir)
 
@@ -74,7 +88,7 @@ def backup(source, destdir,
                 destdir_node[name].delete()
 
 
-def _login() -> PyiCloudService:
+def _login(logger) -> PyiCloudService:
     dotenv.load_dotenv()
     try:
         api = PyiCloudService(os.environ["ICLOUD_USERNAME"],
@@ -89,15 +103,15 @@ def _login() -> PyiCloudService:
         print("Two-factor authentication required.")
         code = input("Enter the code you received of one of your approved devices: ")
         result = api.validate_2fa_code(code)
-        print("Code validation result: %s" % result)
+        logger.debug("Code validation result: %s" % result)
 
         if not result:
             raise RuntimeError("Failed to verify security code")
 
         if not api.is_trusted_session:
-            print("Session is not trusted. Requesting trust...")
+            logger.info("Session is not trusted. Requesting trust...")
             result = api.trust_session()
-            print("Session trust result %s" % result)
+            logger.debug("Session trust result %s" % result)
 
             if not result:
                 print("Failed to request trust. You will likely be prompted for the code again in the coming weeks")
@@ -105,9 +119,10 @@ def _login() -> PyiCloudService:
     return api
 
 
-def _mkdir_p(node: DriveNode, *components) -> DriveNode:
+def _mkdir_p(node: DriveNode, logger, *components) -> DriveNode:
     for component in components:
         if component not in node.dir():
+            logger.info(f"creating directory {component} in {node.name} on iCloud side")
             node.mkdir(component)
             # apparently, calling dir is sometimes needed to see result
             # since we're calling it anyway, add an extra check
