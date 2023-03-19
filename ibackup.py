@@ -122,12 +122,9 @@ def _login(logger) -> PyiCloudService:
 def _mkdir_p(node: DriveNode, logger, *components) -> DriveNode:
     for component in components:
         if component not in node.dir():
-            logger.info(f"creating directory {component} in {node.name} on iCloud side")
+            parent = node.name or "root"
+            logger.info(f"creating directory {component} in {parent} on iCloud side")
             node.mkdir(component)
-            # apparently, calling dir is sometimes needed to see result
-            # since we're calling it anyway, add an extra check
-            if component not in node.dir():
-                raise RuntimeError(f"mkdir succeeded but {component} not visible")
         node = node[component]
     return node
 
