@@ -24,10 +24,14 @@ import dotenv
 @click.option("--purge-backups-older-than",
               help="Delete backups on remote older than the given age in seconds.",
               type=int)
+@click.option("--twofactor-file",
+              help="File where to read 2FA code from (useful if console is not "
+              "possible). File will be created and polled for a minute.")
 @click.option("--debug")
 def backup(source, destdir,
            purge_sources_older_than,
            purge_backups_older_than,
+           twofactor_file,
            debug):
     logger = logging.getLogger(f"ibackup ({destdir})")
     stderr = logging.StreamHandler()
@@ -36,7 +40,8 @@ def backup(source, destdir,
     logger.addHandler(stderr)
     logger.setLevel(logging.DEBUG if debug else logging.INFO)
 
-    api = _login(logger)
+    logger.info(f"making backup of {os.path.abspath(source)}")
+    api = _login(logger, twofactor_file)
 
     now = time.time()
 
@@ -88,7 +93,7 @@ def backup(source, destdir,
                 destdir_node[name].delete()
 
 
-def _login(logger) -> PyiCloudService:
+def _login(logger, twofactor_file) -> PyiCloudService:
     dotenv.load_dotenv()
     try:
         api = PyiCloudService(os.environ["ICLOUD_USERNAME"],
@@ -101,7 +106,7 @@ def _login(logger) -> PyiCloudService:
     # from pyicloud example. TODO: extend with non-interactive solution for inside Docker
     if api.requires_2fa:
         print("Two-factor authentication required.")
-        code = input("Enter the code you received of one of your approved devices: ")
+        code = _get_2fa_code(twofactor_file, logger)
         result = api.validate_2fa_code(code)
         logger.debug("Code validation result: %s" % result)
 
@@ -117,6 +122,25 @@ def _login(logger) -> PyiCloudService:
                 print("Failed to request trust. You will likely be prompted for the code again in the coming weeks")
 
     return api
+
+
+def _get_2fa_code(twofactor_file, logger):
+    if twofactor_file is not None:
+        with open(twofactor_file, "w"):
+            pass
+        logger.info(f"Polling file {twofactor_file} for 2FA code for one minute...")
+        for _ in range(60):
+            with open(twofactor_file, "r") as f:
+                code = f.read()
+                if len(code) > 0:
+                    break
+            time.sleep(1)
+        else:
+            raise click.UsageError("timed out polling for 2FA code")
+        os.unlink(twofactor_file)
+        return code.strip()
+    else:
+        return input("Enter the code you received of one of your approved devices: ")
 
 
 def _mkdir_p(node: DriveNode, logger, *components) -> DriveNode:
