@@ -2,6 +2,10 @@
 """Backup files to iCloud Drive"""
 
 import os
+from datetime import datetime
+import tempfile
+import pathlib
+import shutil
 import click
 from pyicloud import PyiCloudService
 from pyicloud.services.drive import DriveNode
@@ -13,6 +17,34 @@ import dotenv
 @click.argument("destdir")
 @click.option("--mode", type=click.Choice(["mirror", "newdir"]), default="newdir")
 def backup(source, destdir, mode):
+    api = _login()
+
+    with tempfile.TemporaryDirectory() as tempdir_zip, \
+            tempfile.TemporaryDirectory() as tempdir_source:
+        if not os.path.isdir(source):
+            shutil.copyfile(source, tempdir_source)
+            source = tempdir_source
+
+        zip_name = datetime.utcnow().strftime("%Y-%m-%d_%H.%M.%S")
+        zip_path = pathlib.Path(tempdir_zip) / zip_name
+        zip_path = shutil.make_archive(zip_path, "zip", source)
+
+        # workaround for https://github.com/picklepete/pyicloud/issues/384
+        # (works only after using drive API at least once)
+        api.drive.root.dir()
+        api._drive.params["clientId"] = api.client_id
+
+        destdir_node = _mkdir_p(api.drive.root, "ibackup", destdir)
+
+        # for some reason, PyIcloud can't handle uploading from parent paths
+        curdir = os.curdir
+        os.chdir(tempdir_zip)
+        with open(os.path.basename(zip_path), "rb") as f:
+            destdir_node.upload(f)
+        os.chdir(curdir)
+
+
+def _login() -> PyiCloudService:
     dotenv.load_dotenv()
     try:
         api = PyiCloudService(os.environ["ICLOUD_USERNAME"],
@@ -40,14 +72,7 @@ def backup(source, destdir, mode):
             if not result:
                 print("Failed to request trust. You will likely be prompted for the code again in the coming weeks")
 
-    # workaround for https://github.com/picklepete/pyicloud/issues/384
-    # (works only after using drive API at least once)
-    api.drive.root.dir()
-    api._drive.params["clientId"] = api.client_id
-
-    with open(source, "rb") as f:
-        destdir_node = _mkdir_p(api.drive.root, "ibackup", destdir)
-        destdir_node.upload(f)
+    return api
 
 
 def _mkdir_p(node: DriveNode, *components) -> DriveNode:
