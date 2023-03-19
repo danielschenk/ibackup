@@ -2,9 +2,9 @@
 """Backup files to iCloud Drive"""
 
 import os
-from datetime import datetime
 import tempfile
 import pathlib
+import time
 import shutil
 import click
 from pyicloud import PyiCloudService
@@ -15,17 +15,38 @@ import dotenv
 @click.command()
 @click.argument("source")
 @click.argument("destdir")
-@click.option("--mode", type=click.Choice(["mirror", "newdir"]), default="newdir")
-def backup(source, destdir, mode):
+@click.option("--purge-sources-older-than",
+              help="Delete source files older than the given age in seconds, "
+              "before creating archive. Only works for directory sources.",
+              type=int)
+@click.option("--purge-backups-older-than",
+              help="Delete backups on remote older than the given age in seconds.",
+              type=int)
+def backup(source, destdir,
+           purge_sources_older_than,
+           purge_backups_older_than):
     api = _login()
+
+    now = time.time()
+
+    source_is_file = not os.path.isdir(source)
+    if purge_sources_older_than is not None:
+        if source_is_file:
+            raise click.UsageError("sources can only be purged if source is a dir")
+        sourcedir = pathlib.Path(source)
+        for path in sourcedir.rglob("*"):
+            if path.is_dir():
+                continue
+            if now - path.stat().st_mtime > purge_sources_older_than:
+                path.unlink()
 
     with tempfile.TemporaryDirectory() as tempdir_zip, \
             tempfile.TemporaryDirectory() as tempdir_source:
-        if not os.path.isdir(source):
+        if source_is_file:
             shutil.copyfile(source, tempdir_source)
             source = tempdir_source
 
-        zip_name = datetime.utcnow().strftime("%Y-%m-%d_%H.%M.%S")
+        zip_name = str(int(now))
         zip_path = pathlib.Path(tempdir_zip) / zip_name
         zip_path = shutil.make_archive(zip_path, "zip", source)
 
@@ -42,6 +63,15 @@ def backup(source, destdir, mode):
         with open(os.path.basename(zip_path), "rb") as f:
             destdir_node.upload(f)
         os.chdir(curdir)
+
+    if purge_backups_older_than is not None:
+        for name in destdir_node.dir():
+            try:
+                filetime = int(name.rsplit(".", maxsplit=1)[0])
+            except ValueError:
+                continue
+            if now - filetime > purge_backups_older_than:
+                destdir_node[name].delete()
 
 
 def _login() -> PyiCloudService:
