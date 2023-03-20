@@ -27,11 +27,14 @@ import dotenv
 @click.option("--twofactor-file",
               help="File where to read 2FA code from (useful if console is not "
               "possible). File will be created and polled for a minute.")
+@click.option("--cookie-dir",
+              default="~/.python-ibackup/cookies")
 @click.option("--debug")
 def backup(source, destdir,
            purge_sources_older_than,
            purge_backups_older_than,
            twofactor_file,
+           cookie_dir,
            debug):
     logger = logging.getLogger(f"ibackup ({destdir})")
     stderr = logging.StreamHandler()
@@ -41,7 +44,7 @@ def backup(source, destdir,
     logger.setLevel(logging.DEBUG if debug else logging.INFO)
 
     logger.info(f"making backup of {os.path.abspath(source)}")
-    api = _login(logger, twofactor_file)
+    api = _login(logger, twofactor_file, cookie_dir)
 
     now = time.time()
 
@@ -93,13 +96,13 @@ def backup(source, destdir,
                 destdir_node[name].delete()
 
 
-def _login(logger, twofactor_file) -> PyiCloudService:
+def _login(logger, twofactor_file, cookie_dir) -> PyiCloudService:
     dotenv.load_dotenv()
     try:
+        cookie_dir = os.path.abspath(os.path.expanduser(cookie_dir))
         api = PyiCloudService(os.environ["ICLOUD_USERNAME"],
                               os.environ["ICLOUD_PASSWORD"],
-                              cookie_directory=os.path.join(os.path.expanduser("~"),
-                                                            ".python-ibackup"))
+                              cookie_directory=cookie_dir)
     except KeyError as e:
         raise click.UsageError(f"{e.args[0]} required but not set")
 
