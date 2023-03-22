@@ -1,8 +1,13 @@
 FROM python:3.10-alpine AS compile-image
 
 RUN apk update && apk add \
-    rust \
-    cargo
+    gcc \
+    musl-dev \
+    python3-dev \
+    libffi-dev \
+    openssl-dev \
+    cargo \
+    pkgconfig
 
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
