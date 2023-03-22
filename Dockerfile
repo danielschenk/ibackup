@@ -1,16 +1,18 @@
 FROM python:3.10-alpine AS compile-image
 
 RUN apk update && apk add \
-    rust
+    rust \
+    cargo
 
 RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:~/.cargo/bin:$PATH"
+ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements.txt .
 RUN pip install -U --no-cache-dir pip \
     && STATIC_DEPS=true pip install --no-cache-dir -r requirements.txt
 
 FROM python:3.10-alpine
+
 COPY --from=compile-image /opt/venv .
 COPY ibackup.py .
 
