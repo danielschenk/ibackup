@@ -4,8 +4,7 @@ RUN apk update && apk add \
     rust
 
 RUN python -m venv /opt/venv
-# Make sure we use the virtualenv:
-ENV PATH="/opt/venv/bin:$PATH"
+ENV PATH="/opt/venv/bin:~/.cargo/bin:$PATH"
 
 COPY requirements.txt .
 RUN pip install -U --no-cache-dir pip \
