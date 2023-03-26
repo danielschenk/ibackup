@@ -15,8 +15,10 @@ import dotenv
 
 
 @click.command()
-@click.argument("source")
-@click.argument("destdir")
+@click.argument("source",
+                type=str)
+@click.argument("destdir",
+                type=str)
 @click.option("--purge-sources-older-than",
               help="Delete source files older than the given age in hours, "
               "before creating archive. Only works for directory sources.",
@@ -57,7 +59,7 @@ def backup(source, destdir,
             if path.is_dir():
                 logger.debug(f"skipping purge of {path}")
                 continue
-            if now - path.stat().st_mtime > purge_sources_older_than * 60:
+            if now - path.stat().st_mtime > purge_sources_older_than * 3600:
                 logger.info(f"removing {path}")
                 path.unlink()
 
@@ -76,7 +78,7 @@ def backup(source, destdir,
         api.drive.root.dir()
         api._drive.params["clientId"] = api.client_id
 
-        destdir_node = _mkdir_p(api.drive.root, logger, "ibackup", destdir)
+        destdir_node = _mkdir_p(api.drive.root, logger, "ibackup", *destdir.split("/"))
 
         # for some reason, PyIcloud can't handle uploading from parent paths
         curdir = os.curdir
@@ -92,7 +94,7 @@ def backup(source, destdir,
                 filetime = int(name.rsplit(".", maxsplit=1)[0])
             except ValueError:
                 continue
-            if now - filetime > purge_backups_older_than * 60:
+            if now - filetime > purge_backups_older_than * 3600:
                 destdir_node[name].delete()
 
 
@@ -100,6 +102,7 @@ def _login(logger, twofactor_file, cookie_dir) -> PyiCloudService:
     dotenv.load_dotenv()
     try:
         cookie_dir = os.path.abspath(os.path.expanduser(cookie_dir))
+        os.makedirs(cookie_dir, exist_ok=True)
         api = PyiCloudService(os.environ["ICLOUD_USERNAME"],
                               os.environ["ICLOUD_PASSWORD"],
                               cookie_directory=cookie_dir)
