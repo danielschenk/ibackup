@@ -18,11 +18,11 @@ import dotenv
 @click.argument("source")
 @click.argument("destdir")
 @click.option("--purge-sources-older-than",
-              help="Delete source files older than the given age in seconds, "
+              help="Delete source files older than the given age in hours, "
               "before creating archive. Only works for directory sources.",
               type=int)
 @click.option("--purge-backups-older-than",
-              help="Delete backups on remote older than the given age in seconds.",
+              help="Delete backups on remote older than the given age in hours.",
               type=int)
 @click.option("--twofactor-file",
               help="File where to read 2FA code from (useful if console is not "
@@ -57,7 +57,7 @@ def backup(source, destdir,
             if path.is_dir():
                 logger.debug(f"skipping purge of {path}")
                 continue
-            if now - path.stat().st_mtime > purge_sources_older_than:
+            if now - path.stat().st_mtime > purge_sources_older_than * 60:
                 logger.info(f"removing {path}")
                 path.unlink()
 
@@ -92,7 +92,7 @@ def backup(source, destdir,
                 filetime = int(name.rsplit(".", maxsplit=1)[0])
             except ValueError:
                 continue
-            if now - filetime > purge_backups_older_than:
+            if now - filetime > purge_backups_older_than * 60:
                 destdir_node[name].delete()
 
 
