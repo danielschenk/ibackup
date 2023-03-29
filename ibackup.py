@@ -7,6 +7,7 @@ import pathlib
 import time
 import shutil
 import logging
+import sys
 
 import click
 from pyicloud import PyiCloudService
@@ -39,7 +40,7 @@ def backup(source, destdir,
            cookie_dir,
            debug):
     logger = logging.getLogger(f"ibackup ({destdir})")
-    stderr = logging.StreamHandler()
+    stderr = logging.StreamHandler(sys.stderr)
     fmt = "%(asctime)s %(levelname)8s %(name)s: %(message)s"
     stderr.setFormatter(logging.Formatter(fmt))
     logger.addHandler(stderr)
@@ -60,8 +61,11 @@ def backup(source, destdir,
                 logger.debug(f"skipping purge of {path}")
                 continue
             if now - path.stat().st_mtime > purge_sources_older_than * 3600:
-                logger.info(f"removing {path}")
-                path.unlink()
+                try:
+                    logger.info(f"removing locally: {path}")
+                    path.unlink()
+                except Exception as e:
+                    logger.error(f"{e}")
 
     with tempfile.TemporaryDirectory() as tempdir_zip, \
             tempfile.TemporaryDirectory() as tempdir_source:
@@ -95,7 +99,11 @@ def backup(source, destdir,
             except ValueError:
                 continue
             if now - filetime > purge_backups_older_than * 3600:
-                destdir_node[name].delete()
+                try:
+                    logger.info(f"removing in iCloud: {name}")
+                    destdir_node[name].delete()
+                except Exception as e:
+                    logger.error(f"{e}")
 
 
 def _login(logger, twofactor_file, cookie_dir) -> PyiCloudService:
